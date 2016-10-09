@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <OPENROAD xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<!-- Copyright (c) 2016 Actian Corporation. All Rights Reserved.-->
 	<APPLICATION name="ExampleTests">
 		<included_apps>
 			<row>
@@ -9,21 +10,84 @@
 			</row>
 			<row>
 				<sequence>1</sequence>
-				<appname>UnitTestFramework</appname>
+				<appname>unittestframework</appname>
 				<version>-1</version>
 			</row>
 			<row_class>inclapp</row_class>
 		</included_apps>
 		<procstart>runtests</procstart>
 	</APPLICATION>
-	<COMPONENT name="runtests" xsi:type="proc4glsource">
+	<COMPONENT name="My4glproc" xsi:type="proc4glsource">
 		<script>
-			<![CDATA[procedure runtests() =
+			<![CDATA[procedure My4glproc
+(
+    t = varchar(32) not null;
+) =
+declare
+
+enddeclare
 {
-    CALLPROC executeTests(test = TestAssertEquals.Create());
+   return uppercase(t);
 }
 ]]>
 		</script>
+		<datatype>varchar(100)</datatype>
+	</COMPONENT>
+	<COMPONENT name="runtests" xsi:type="proc4glsource">
+		<script>
+			<![CDATA[procedure runtests() =
+declare
+   FileName = VARCHAR(256) NOT NULL Default 'myTests.txt';	// Used for version 1
+   so = StringObject;   									// Used for version 2
+   Arr = Array of StringObject;								// Used for Version 3
+Enddeclare
+{
+// Version 1: Run from a file
+    CALLPROC executeSuite(fileName = Filename, RunScope = CurProcedure.Scope);
+
+
+// Version 2: Build the file 
+    So.ConcatVarchar(text= 'TestAssertEquals' + HC_NEWLINE);
+    So.ConcatVarchar(text= 'Test4GLProc' + HC_NEWLINE);
+    
+    CALLPROC executeSuite(so = so, RunScope = CurProcedure.Scope);
+
+
+// Version 3: Build an array 
+    Arr[Arr.LastRow + 1].value = 'TestAssertEquals';
+    Arr[Arr.LastRow + 1].value = 'Test4GLProc';
+    
+    CALLPROC executeSuite(so = so, RunScope = CurProcedure.Scope);
+    
+
+// Original Version
+	Callproc ExecuteTests(Test = TestAssertEquals.Create());
+	Callproc ExecuteTests(Test = Test4GLProc.Create());
+	
+
+}
+]]>
+		</script>
+	</COMPONENT>
+	<COMPONENT name="test4glProc" xsi:type="classsource">
+		<superclass>testcase</superclass>
+		<script>
+			<![CDATA[METHOD test4glproc()=
+DECLARE
+   t = VARCHAR(100) NOT NULL DEFAULT 'Tim';
+   e = VARCHAR(100) NOT NULL DEFAULT 'TIM';
+ENDDECLARE
+{
+   G_Assert.assertEquals(expectedvarchar = e, actualVarchar = my4glproc(t = t));
+}]]>
+		</script>
+		<methods>
+			<row>
+				<displayname>test4glproc</displayname>
+				<datatype>varchar(100)</datatype>
+			</row>
+			<row_class>methodobject</row_class>
+		</methods>
 	</COMPONENT>
 	<COMPONENT name="TestAssertEquals" xsi:type="classsource">
 		<superclass>testcase</superclass>
@@ -32,7 +96,6 @@
 {
 
     G_Assert.assertEquals( expectedInteger = 35, actualInteger = 35 );
-    
 }
 
 Method TestIntegerEqualFail()=

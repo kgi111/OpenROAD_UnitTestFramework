@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <OPENROAD xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 	<!-- Copyright (c) 2016 Actian Corporation. All Rights Reserved.-->
-	<APPLICATION name="unittestframework">
+	<APPLICATION name="UnitTestFramework">
 		<included_apps>
 			<row>
 				<appname>core</appname>
@@ -641,66 +641,70 @@ end
 			<row_class>attributeobject</row_class>
 		</attributes>
 	</COMPONENT>
+	<COMPONENT name="ExecuteSuite" xsi:type="proc4glsource">
+		<script>
+			<![CDATA[procedure ExecuteSuite
+(
+   FileName = VARCHAR(256) NOT NULL;
+   so = StringObject DEFAULT NULL;
+   arr = Array of StringObject DEFAULT NULL;
+   RunScope = Scope DEFAULT NULL;
+) =
+declare
+   i = INTEGER NOT NULL;
+   DExp = DynExpr DEFAULT NULL;
+   TC   = TestCase DEFAULT NULL;
+   resultStr = StringObject;
+   SuiteResult = TestResult;
+   Result = TestResult;
+enddeclare
+{
+	G_Print.AppendTextToFile(Text = 'Run TestSuite');
+
+	IF filename != '' THEN
+		so = StringObject.Create();
+		so.FileHandle = G_Helper.TestDir + G_Helper.DirectorySeparator + FileName;
+		IF so.ErrorStatus != ER_OK THEN
+			G_Print.AppendTextToFile(Text = 'Error: Filename: ' + so.FileHandle + ' not found');
+			RETURN;
+		ENDIF;
+	ENDIF;
+
+   
+	IF so IS NOT NULL THEN
+		arr = so.split(Delimiter = HC_NEWLINE);
+	ENDIF;
+	SuiteResult.Name = 'Suite';
+	FOR i = 1 TO Arr.lastRow DO
+		DExp = RunScope.CreateDynExpr(String = Arr[i].value+'.create()');
+		DExp.GetValue(Value = Byref(TC));
+		CALLPROC executeTests(test = TC, result = Byref(Result));
+		SuiteResult.add(Result = Result);
+	ENDFOR;
+
+	G_Print.AppendDividerToFile();
+	G_Print.AppendResultToFile(Result = SuiteResult);
+	G_Print.AppendDividerToFile();
+	G_Print.AppendTextToFile(Text = 'Ran TestSuite' + HC_NEWLINE);
+
+	SuiteResult.TraceTotal();
+}]]>
+		</script>
+	</COMPONENT>
 	<COMPONENT name="executeTests" xsi:type="proc4glsource">
 		<script>
 			<![CDATA[procedure executeTests
 (
-	test = TestCase
+	test = TestCase DEFAULT NULL;
+	result = TestResult;
 )=
 declare
-	result = TestResult;
-	i = INTEGER not null;
-	t1 = INTEGER not null;
-	t2 = INTEGER not null;
-	e = Error DEFAULT NULL;
-	resultstr = StringObject;
 enddeclare
 {
-	CurProcedure.Trace(text= 'Running tests from ' + test.ClassName + ' ...');
-	t1 = GetTickCount();
 	test.run(result = result);
-	t2 = GetTickCount();
 	
-	resultstr.Value = 
-					test.ClassName +': TestsRun=' + varchar(result.TestsRun) + ', Time_in_ms=' + varchar(t2-t1) +
-					', Failures=' + varchar(result.failures.LastRow) + ', Errors=' + varchar(result.errors.LastRow)+ 
-					', Skipped=' + varchar(result.skipped.LastRow) + HC_NEWLINE;  
-
-	IF result.skipped.LastRow>0 THEN
-		CurSession.ExitCode=2;
-		IF result.skipped.LastRow>0 THEN
-			CurProcedure.Trace(text= '=== Skipped Tests ===');
-		ENDIF;
-		FOR i=1 TO result.skipped.LastRow DO
-			e = result.skipped[i].error;
-			CurProcedure.Trace(text= e.testmethod + ' ' + e.errorexec + ' (line '+varchar(e.errorline)+'): ' +
-				HC_NEWLINE + HC_TAB + e.errortext);
-		ENDFOR;		
-	ENDIF;
-
-	IF result.errors.LastRow>0 OR result.failures.LastRow>0 THEN
-		CurSession.ExitCode=1;
-		IF result.errors.LastRow>0 THEN
-			CurProcedure.Trace(text= '=== Errors ===');
-		ENDIF;
-		FOR i=1 TO result.errors.LastRow DO
-			e = result.errors[i].error;
-			CurProcedure.Trace(text= e.testmethod + ' ' + e.errorexec + ' (line '+varchar(e.errorline)+'): ' +
-			HC_NEWLINE +  e.ClassName + HC_NEWLINE + HC_TAB + e.errortext);
-		ENDFOR;
-		IF result.failures.LastRow>0 THEN
-			CurProcedure.Trace(text= '=== Failures ===');
-		ENDIF;
-		FOR i=1 TO result.failures.LastRow DO
-			e = result.failures[i].error;
-			CurProcedure.Trace(text= e.testmethod + ' ' + e.errorexec + ' (line '+varchar(e.errorline)+'): ' +
-			HC_NEWLINE + e.ClassName + HC_NEWLINE + HC_TAB + e.errortext);
-		ENDFOR;
-	ENDIF;
-
-	resultstr.AppendToFile(filename=G_Helper.TestStatsFile);
-	CurProcedure.Trace(text='======================================================================' + HC_NEWLINE +
-		resultstr.Value + '======================================================================');
+	result.traceTotal();
+	G_Print.AppendResultToFile(Result = Result);
 }
 ]]>
 		</script>
@@ -713,6 +717,13 @@ enddeclare
 	</COMPONENT>
 	<COMPONENT name="G_Helper" xsi:type="globsource">
 		<datatype>helper</datatype>
+	</COMPONENT>
+	<COMPONENT name="G_Print" xsi:type="globsource">
+		<datatype>printresult</datatype>
+	</COMPONENT>
+	<COMPONENT name="GetFileAttributes" xsi:type="proc3glsource">
+		<datatype>integer</datatype>
+		<libraryname>kernel32.dll</libraryname>
 	</COMPONENT>
 	<COMPONENT name="GetTickCount" xsi:type="proc3glsource">
 		<datatype>integer</datatype>
@@ -730,6 +741,7 @@ DECLARE
 	tmpdir = VARCHAR(256) NOT NULL;
 	deleteFile = PROCEDURE;
 	teststatsfile = VARCHAR(256) NOT NULL;
+//	access = Integer NOT NULL
 ENDDECLARE
 {
 	IF CurSession.OperatingSystem=SY_UNIX THEN
@@ -740,6 +752,9 @@ ENDDECLARE
 	IF testdir = '' THEN
 		testdir = CurSession.WorkingDirectory;
 	ENDIF;
+	
+	//access = GetFileAttributes(testDir);
+	//message 'Access: ' + varchar(Access);
 	CurObject.TestDir = testdir;
 
 	teststatsfile = CurSession.GetEnv(name = 'OR_UNITTEST_STATSFILE');
@@ -976,6 +991,64 @@ ENDDECLARE
 			<row_class>methodobject</row_class>
 		</methods>
 	</COMPONENT>
+	<COMPONENT name="PrintResult" xsi:type="classsource">
+		<superclass>userobject</superclass>
+		<script>
+			<![CDATA[method AppendResultToFile(
+	Result = TestResult DEFAULT NULL;
+)=
+DECLARE
+	so = StringObject ;
+ENDDECLARE
+{
+	so.Value = 
+			'TestsRun='     + varchar(Result.TestsRun) + 
+			', Time_in_ms=' + varchar(Result.ET) +
+			', Failures='   + varchar(Result.failures.LastRow) +
+			', Errors='     + varchar(Result.errors.LastRow)+ 
+			', Skipped='    + varchar(Result.skipped.LastRow) +
+			' ' + Result.Name + HC_NEWLINE;  
+
+	so.AppendToFile(filename=G_Helper.TestStatsFile);
+
+}
+
+method AppendTextToFile(
+	Text = VARCHAR(100) NOT NULL;
+)=
+DECLARE
+	so = StringObject ;
+ENDDECLARE
+{
+	so.Value = varchar(DATE('NOW')) +' '+ Text + HC_NEWLINE;  
+	so.AppendToFile(filename=G_Helper.TestStatsFile);
+}
+
+method AppendDividerToFile(
+	Text = VARCHAR(100) NOT NULL;
+)=
+DECLARE
+	so = StringObject ;
+ENDDECLARE
+{
+	so.Value = '--------------------------------------------------------------------------------' + HC_NEWLINE;  
+	so.AppendToFile(filename=G_Helper.TestStatsFile);
+}
+]]>
+		</script>
+		<methods>
+			<row>
+				<displayname>AppendResultToFile</displayname>
+			</row>
+			<row>
+				<displayname>AppendTextToFile</displayname>
+			</row>
+			<row>
+				<displayname>AppendDividerToFile</displayname>
+			</row>
+			<row_class>methodobject</row_class>
+		</methods>
+	</COMPONENT>
 	<COMPONENT name="runtests" xsi:type="proc4glsource">
 		<script>
 			<![CDATA[procedure runtests() =
@@ -1043,7 +1116,7 @@ METHOD run(result=TestResult DEFAULT NULL)=
 	IF (result IS NULL) THEN
 		result = TestResult.Create();
 	ENDIF;
-
+    Result.Start(Name = CurObject.ClassName);
 	IF CurMethod.SetExitTrap()=ER_OK THEN
 		// try
 		result.StartTest(thetest=CurObject);
@@ -1066,6 +1139,7 @@ METHOD run(result=TestResult DEFAULT NULL)=
 
     CurObject.runTest(result=result); 
     CurObject.tearDown();
+    Result.Stop();
 }
 
 METHOD runTest(result=TestResult DEFAULT NULL)=
@@ -1187,6 +1261,32 @@ END;
     CurObject.TestsRun = CurObject.TestsRun+1;
 }
 
+Method Start(
+	Name = VARCHAR(32) NOT NULL;
+)=
+{
+	CurMethod.Trace(text= 'Running tests from ' + Name + ' ...');
+
+    CurObject.reset();
+    CurObject.Name = Name;
+	CurObject.ET = GetTickCount();
+}
+
+Method Stop=
+{
+	CurObject.ET = GetTickCount() - CurObject.ET;
+}
+
+METHOD Reset=
+{
+	CurObject.Name = '';
+	CurObject.ET = 0;
+	CurObject.TestsRun = 0;
+	CurObject.Errors.Clear();
+	CurObject.Failures.Clear();
+	CurObject.Skipped.Clear();
+}
+
 METHOD AddFailure(thetest = Test, testmethod = varchar(32) not null)=
 DECLARE
     i=INTEGER NOT NULL;
@@ -1223,7 +1323,78 @@ ENDDECLARE
     CurObject.Skipped[i].error.testmethod = testmethod;
     G_error = NULL;
 }
-]]>
+
+METHOD Add(
+	Result = TestResult DEFAULT NULL;
+)=
+DECLARE
+	i = INTEGER NOT NULL;
+ENDDECLARE
+{
+    CurObject.ET = CurObject.ET + Result.ET;
+    CurObject.TestsRun = CurObject.TestsRun + Result.TestsRun;
+    FOR i = 1 to Result.Errors.LastRow DO
+		CurObject.errors[CurObject.errors.LastRow+1] = Result.Errors[i].Duplicate();
+	ENDFOR;
+    FOR i = 1 to Result.Failures.LastRow DO
+		CurObject.Failures[CurObject.Failures.LastRow+1] = Result.Failures[i].Duplicate();
+	ENDFOR;
+    FOR i = 1 to Result.Skipped.LastRow DO
+		CurObject.Skipped[CurObject.Skipped.LastRow+1] = Result.Skipped[i].Duplicate();
+	ENDFOR;
+}
+
+METHOD TraceTotal()=
+{ 
+	CurMethod.Trace(text= CurObject.Name + ' TestsRun:' + HC_TAB + VARCHAR(CurObject.TestsRun));
+	CurMethod.Trace(text= CurObject.Name + ' Elapsed :' + HC_TAB + VARCHAR(CurObject.ET));
+	CurMethod.Trace(text= CurObject.Name + ' Skipped :' + HC_TAB + VARCHAR(CurObject.skipped.LastRow));
+	CurMethod.Trace(text= CurObject.Name + ' Errors  :' + HC_TAB + VARCHAR(CurObject.Errors.LastRow));
+	CurMethod.Trace(text= CurObject.Name + ' Failures:' + HC_TAB + VARCHAR(CurObject.Failures.LastRow));
+	CurMethod.Trace(text='======================================================================' + HC_NEWLINE);
+}
+
+
+
+METHOD Trace=
+DECLARE
+	i = INTEGER NOT NULL;
+	e = Error DEFAULT NULL;
+ENDDECLARE
+{
+	IF CurObject.skipped.LastRow>0 THEN
+		CurSession.ExitCode=2;
+		IF CurObject.skipped.LastRow>0 THEN
+			CurMethod.Trace(text= '=== Skipped Tests ===');
+		ENDIF;
+		FOR i=1 TO CurObject.skipped.LastRow DO
+			e = CurObject.skipped[i].error;
+			CurMethod.Trace(text= e.testmethod + ' ' + e.errorexec + ' (line '+varchar(e.errorline)+'): ' +
+				HC_NEWLINE + HC_TAB + e.errortext);
+		ENDFOR;		
+	ENDIF;
+
+	IF CurObject.errors.LastRow>0 OR CurObject.failures.LastRow>0 THEN
+		CurSession.ExitCode=1;
+		IF CurObject.errors.LastRow>0 THEN
+			CurMethod.Trace(text= '=== Errors ===');
+		ENDIF;
+		FOR i=1 TO CurObject.errors.LastRow DO
+			e = CurObject.errors[i].error;
+			CurMethod.Trace(text= e.testmethod + ' ' + e.errorexec + ' (line '+varchar(e.errorline)+'): ' +
+			HC_NEWLINE +  e.ClassName + HC_NEWLINE + HC_TAB + e.errortext);
+		ENDFOR;
+		IF CurObject.failures.LastRow>0 THEN
+			CurMethod.Trace(text= '=== Failures ===');
+		ENDIF;
+		FOR i=1 TO CurObject.failures.LastRow DO
+			e = CurObject.failures[i].error;
+			CurMethod.Trace(text= e.testmethod + ' ' + e.errorexec + ' (line '+varchar(e.errorline)+'): ' +
+			HC_NEWLINE + e.ClassName + HC_NEWLINE + HC_TAB + e.errortext);
+		ENDFOR;
+	ENDIF;
+	CurMethod.Trace(text='======================================================================' + HC_NEWLINE );
+}]]>
 		</script>
 		<attributes>
 			<row>
@@ -1248,6 +1419,14 @@ ENDDECLARE
 				<isarray>1</isarray>
 				<isnullable>1</isnullable>
 			</row>
+			<row>
+				<displayname>ET</displayname>
+				<datatype>integer</datatype>
+			</row>
+			<row>
+				<displayname>Name</displayname>
+				<datatype>varchar(32)</datatype>
+			</row>
 			<row_class>attributeobject</row_class>
 		</attributes>
 		<methods>
@@ -1262,6 +1441,24 @@ ENDDECLARE
 			</row>
 			<row>
 				<displayname>addSkipped</displayname>
+			</row>
+			<row>
+				<displayname>Trace</displayname>
+			</row>
+			<row>
+				<displayname>Add</displayname>
+			</row>
+			<row>
+				<displayname>reset</displayname>
+			</row>
+			<row>
+				<displayname>TraceTotal</displayname>
+			</row>
+			<row>
+				<displayname>Start</displayname>
+			</row>
+			<row>
+				<displayname>Stop</displayname>
 			</row>
 			<row_class>methodobject</row_class>
 		</methods>
